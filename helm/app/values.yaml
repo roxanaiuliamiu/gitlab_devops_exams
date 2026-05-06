@@ -1,0 +1,26 @@
+gateway:
+  image:
+    repository: roxanaiuliamiu/k-api-gateway
+    tag: "latest"
+  replicaCount: 1
+  containerPort: 8000
+
+users:
+  image:
+    repository: roxanaiuliamiu/k-users
+    tag: "latest"
+  replicaCount: 1
+  containerPort: 8000
+
+orders:
+  image:
+    repository: roxanaiuliamiu/k-orders
+    tag: "latest"
+  replicaCount: 1
+  containerPort: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "app.local"
+  path: /
