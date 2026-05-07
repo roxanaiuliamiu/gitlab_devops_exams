@@ -7,18 +7,25 @@ spec:
   selector:
     matchLabels:
       app: users
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ .Chart.Name }}
   template:
     metadata:
       labels:
         app: users
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/component: users
     spec:
       containers:
       - name: users
         image: "{{ .Values.users.image.repository }}:{{ .Values.users.image.tag }}"
         imagePullPolicy: IfNotPresent
         command: ["sh", "-c"]
+        spec:
+        revisionHistoryLimit: 1
         args:
-         - "uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio"
+         - {{ .Values.users.command | quote }}
         ports:
           - containerPort: {{ .Values.users.containerPort }}
         envFrom:

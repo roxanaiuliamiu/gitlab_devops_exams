@@ -7,18 +7,25 @@ spec:
   selector:
     matchLabels:
       app: orders
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ .Chart.Name }}
   template:
     metadata:
       labels:
         app: orders
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/component: orders
     spec:
       containers:
       - name: orders
         image: "{{ .Values.orders.image.repository }}:{{ .Values.orders.image.tag }}"
         imagePullPolicy: IfNotPresent
         command: ["sh", "-c"]
+        spec:
+        revisionHistoryLimit: 1
         args:
-        - "uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio"
+         - {{ .Values.orders.command | quote }}
         ports:
           - containerPort: {{ .Values.orders.containerPort }}
         envFrom:
