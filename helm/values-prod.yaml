@@ -1,2 +1,33 @@
+
+global:
+  environment: prod
+  host: api.prod.local
+
 ingress:
-  host: prod.local
+  enabled: true
+  className: nginx
+  path: / 
+
+secrets:
+  jwtSecretKey: prod-super-secret
+
+gateway:
+  replicaCount: 1
+  containerPort: 8000
+  image:
+    repository: roxanaiuliamiu/k-api-gateway
+    tag: latest
+
+users:
+  replicaCount: 1
+  containerPort: 8000
+  image:
+    repository: roxanaiuliamiu/k-users
+    tag: latest
+
+orders:
+  replicaCount: 1
+  containerPort: 8000
+  image:
+    repository: roxanaiuliamiu/k-orders
+    tag: latest

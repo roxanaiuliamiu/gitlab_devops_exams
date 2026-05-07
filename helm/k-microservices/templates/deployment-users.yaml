@@ -13,14 +13,14 @@ spec:
         app: users
     spec:
       containers:
-      - name: gateway
-        image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+      - name: users
+        image: "{{ .Values.users.image.repository }}:{{ .Values.users.image.tag }}"
         imagePullPolicy: IfNotPresent
         command: ["sh", "-c"]
         args:
-          - "uvicorn main:app --host 0.0.0.0 --port 8000"
+         - "uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio"
         ports:
-          - containerPort: {{ .Values.gateway.containerPort }}
+          - containerPort: {{ .Values.users.containerPort }}
         envFrom:
           - configMapRef:
-              name: gateway-env
+              name: users-env

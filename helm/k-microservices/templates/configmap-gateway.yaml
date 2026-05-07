@@ -5,3 +5,4 @@ metadata:
 data:
   USERS_SERVICE_URL: "http://users:8000"
   ORDERS_SERVICE_URL: "http://orders:8000"
+  ENVIRONMENT: "{{ .Values.global.environment }}"
