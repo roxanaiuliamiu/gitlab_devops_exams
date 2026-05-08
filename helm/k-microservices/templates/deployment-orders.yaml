@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: orders
 spec:
+  revisionHistoryLimit: 1
   replicas: {{ .Values.orders.replicaCount }}
   selector:
     matchLabels:
@@ -22,8 +23,6 @@ spec:
         image: "{{ .Values.orders.image.repository }}:{{ .Values.orders.image.tag }}"
         imagePullPolicy: IfNotPresent
         command: ["sh", "-c"]
-        spec:
-        revisionHistoryLimit: 1
         args:
          - {{ .Values.orders.command | quote }}
         ports:

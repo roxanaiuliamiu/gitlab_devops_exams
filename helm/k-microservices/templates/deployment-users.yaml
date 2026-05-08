@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: users
 spec:
+  revisionHistoryLimit: 1
   replicas: {{ .Values.users.replicaCount }}
   selector:
     matchLabels:
@@ -22,8 +23,6 @@ spec:
         image: "{{ .Values.users.image.repository }}:{{ .Values.users.image.tag }}"
         imagePullPolicy: IfNotPresent
         command: ["sh", "-c"]
-        spec:
-        revisionHistoryLimit: 1
         args:
          - {{ .Values.users.command | quote }}
         ports:
