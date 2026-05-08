@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: orders
 spec:
+  revisionHistoryLimit: 1
   replicas: {{ .Values.orders.replicaCount }}
   selector:
     matchLabels:
@@ -18,16 +19,34 @@ spec:
         app.kubernetes.io/component: orders
     spec:
       containers:
-      - name: orders
-        image: "{{ .Values.orders.image.repository }}:{{ .Values.orders.image.tag }}"
-        imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
-        spec:
-        revisionHistoryLimit: 1
-        args:
-         - {{ .Values.orders.command | quote }}
-        ports:
-          - containerPort: {{ .Values.orders.containerPort }}
-        envFrom:
-          - configMapRef:
-              name: orders-env
+        - name: orders
+          image: "{{ .Values.orders.image.repository }}:{{ .Values.orders.image.tag }}"
+          imagePullPolicy: {{ default (ternary "Always" "IfNotPresent" (eq .Values.orders.image.tag "latest")) .Values.orders.image.pullPolicy }}
+
+          {{- /* Preferred: explicit arrays in values */}}
+          {{- with .Values.orders.command }}
+          command:
+{{ toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.orders.args }}
+          args:
+{{ toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- /* Backward compatibility:
+                - old chart used a shell wrapper and referenced a wrong key (.Values.orders.image.command)
+                - we support both .Values.orders.command (string) and .Values.orders.image.command (string)
+          */}}
+          {{- if and (not .Values.orders.args) (or (kindIs "string" .Values.orders.command) (kindIs "string" .Values.orders.image.command)) }}
+          command: ["sh", "-c"]
+          args:
+            - {{ default .Values.orders.command .Values.orders.image.command | quote }}
+          {{- end }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.orders.containerPort }}
+
+          envFrom:
+            - configMapRef:
+                name: orders-env

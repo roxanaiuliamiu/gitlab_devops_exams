@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: users
 spec:
+  revisionHistoryLimit: 1
   replicas: {{ .Values.users.replicaCount }}
   selector:
     matchLabels:
@@ -18,16 +19,29 @@ spec:
         app.kubernetes.io/component: users
     spec:
       containers:
-      - name: users
-        image: "{{ .Values.users.image.repository }}:{{ .Values.users.image.tag }}"
-        imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
-        spec:
-        revisionHistoryLimit: 1
-        args:
-         - {{ .Values.users.command | quote }}
-        ports:
-          - containerPort: {{ .Values.users.containerPort }}
-        envFrom:
-          - configMapRef:
-              name: users-env
+        - name: users
+          image: "{{ .Values.users.image.repository }}:{{ .Values.users.image.tag }}"
+          imagePullPolicy: IfNotPresent
+
+          {{- /* Preferred: explicit arrays in values */}}
+          {{- with .Values.users.command }}
+          command:
+{{ toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.users.args }}
+          args:
+{{ toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- /* Backward compatibility: if users.command is a string and args isn't provided */}}
+          {{- if and (not .Values.users.args) (kindIs "string" .Values.users.command) }}
+          command: ["sh", "-c"]
+          args:
+            - {{ .Values.users.command | quote }}
+          {{- end }}
+
+          ports:
+            - containerPort: {{ .Values.users.containerPort }}
+          envFrom:
+            - configMapRef:
+                name: users-env
