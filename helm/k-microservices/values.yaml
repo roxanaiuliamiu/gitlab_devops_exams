@@ -2,13 +2,33 @@ gateway:
   image:
     repository: roxanaiuliamiu/k-api-gateway
     tag: "latest"
+    # Because tag is "latest" we want to always pull on upgrades (avoid cached old image).
+    pullPolicy: Always
+
   replicaCount: 1
   containerPort: 8000
+
+  # Must match the ConfigMap name that exists/gets created by your chart.
+  # Keep gateway-env if your ConfigMap is really named gateway-env.
+  envConfigMapName: gateway-env
+
+  # Probes: make sure your app exposes this endpoint.
+  # If you DON'T have /health, change it to a real endpoint (or temporarily remove probes in the template).
+  probes:
+    path: /openapi.json
+    readinessInitialDelaySeconds: 5
+    livenessInitialDelaySeconds: 20
+    periodSeconds: 5
+    failureThreshold: 6
+    startupFailureThreshold: 30
+    startupPeriodSeconds: 2
 
 users:
   image:
     repository: roxanaiuliamiu/k-users
     tag: "latest"
+    pullPolicy: Always
+
   replicaCount: 1
   containerPort: 8000
 
@@ -16,6 +36,8 @@ orders:
   image:
     repository: roxanaiuliamiu/k-orders
     tag: "latest"
+    pullPolicy: Always
+    command: "uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio"
   replicaCount: 1
   containerPort: 8000
 

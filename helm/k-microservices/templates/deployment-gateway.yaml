@@ -15,12 +15,51 @@ spec:
       containers:
         - name: gateway
           image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
-          imagePullPolicy: IfNotPresent
-          command: ["sh", "-c"]
+
+          # If you use tag "latest", ALWAYS pull to avoid stale cached images during upgrades.
+          imagePullPolicy: {{ default (ternary "Always" "IfNotPresent" (eq .Values.gateway.image.tag "latest")) .Values.gateway.image.pullPolicy }}
+
+          # Avoid sh -c (can fail if the image doesn't include /bin/sh) and avoid quoting issues.
+          command: ["uvicorn"]
           args:
-          - "uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio"
+            - "main:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "{{ .Values.gateway.containerPort }}"
+            - "--loop"
+            - "asyncio"
+
           ports:
-            - containerPort: {{ .Values.gateway.containerPort }}
+            - name: http
+              containerPort: {{ .Values.gateway.containerPort }}
+
+          # If your ConfigMap name is templated elsewhere, update this to match.
           envFrom:
             - configMapRef:
-                name: gateway-env
+                name: {{ default "gateway-env" .Values.gateway.envConfigMapName | quote }}
+
+          # Strongly recommended so Helm --wait doesn't hang and to prevent restart loops from bad liveness timing.
+          readinessProbe:
+            httpGet:
+              path: {{ default "/health" .Values.gateway.probes.path | quote }}
+              port: http
+            initialDelaySeconds: {{ default 5 .Values.gateway.probes.readinessInitialDelaySeconds }}
+            periodSeconds: {{ default 5 .Values.gateway.probes.periodSeconds }}
+            failureThreshold: {{ default 6 .Values.gateway.probes.failureThreshold }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ default "/health" .Values.gateway.probes.path | quote }}
+              port: http
+            initialDelaySeconds: {{ default 20 .Values.gateway.probes.livenessInitialDelaySeconds }}
+            periodSeconds: {{ default 10 .Values.gateway.probes.periodSeconds }}
+            failureThreshold: {{ default 3 .Values.gateway.probes.failureThreshold }}
+
+          # Optional but best if app startup can be slow (prevents liveness killing during boot).
+          startupProbe:
+            httpGet:
+              path: {{ default "/health" .Values.gateway.probes.path | quote }}
+              port: http
+            failureThreshold: {{ default 30 .Values.gateway.probes.startupFailureThreshold }}
+            periodSeconds: {{ default 2 .Values.gateway.probes.startupPeriodSeconds }}
