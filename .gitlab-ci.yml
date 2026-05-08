@@ -1,0 +1,144 @@
+workflow:
+  rules:
+    # Run for branch pipelines and merge requests
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - lint
+  - build
+  - deploy
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: "1"
+
+  RELEASE_NAME: app
+  CHART_PATH: helm/k-microservices
+
+  DOCKERHUB_NAMESPACE: "roxanaiuliamiu"
+  GATEWAY_IMAGE: "$DOCKERHUB_NAMESPACE/k-api-gateway"
+  USERS_IMAGE: "$DOCKERHUB_NAMESPACE/k-users"
+  ORDERS_IMAGE: "$DOCKERHUB_NAMESPACE/k-orders"
+
+# -----------------------
+# Lint (Linux / SaaS runner)
+# -----------------------
+helm_lint:
+  stage: lint
+  image:
+    name: alpine/helm:3.15.2
+    entrypoint: [""]
+  script:
+    - helm lint helm/k-microservices -f helm/values-dev.yaml
+    - helm lint helm/k-microservices -f helm/values-qa.yaml
+    - helm lint helm/k-microservices -f helm/values-staging.yaml
+    - helm lint helm/k-microservices -f helm/values-prod.yaml
+
+# -----------------------
+# Build & push images (Linux / SaaS runner)
+# - Push immutable tag ($CI_COMMIT_SHORT_SHA) used for deploys
+# - Optionally also push :latest for convenience
+# -----------------------
+.docker_build_template: &docker_build_template
+  stage: build
+  image: docker:27
+  services: ["docker:27-dind"]
+  before_script:
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+build_gateway:
+  <<: *docker_build_template
+  script:
+    - docker build -t "$GATEWAY_IMAGE:$CI_COMMIT_SHORT_SHA" -t "$GATEWAY_IMAGE:latest" -f gateway/Dockerfile gateway
+    - docker push "$GATEWAY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$GATEWAY_IMAGE:latest"
+
+build_users:
+  <<: *docker_build_template
+  script:
+    - docker build -t "$USERS_IMAGE:$CI_COMMIT_SHORT_SHA" -t "$USERS_IMAGE:latest" -f users/Dockerfile users
+    - docker push "$USERS_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$USERS_IMAGE:latest"
+
+build_orders:
+  <<: *docker_build_template
+  script:
+    - docker build -t "$ORDERS_IMAGE:$CI_COMMIT_SHORT_SHA" -t "$ORDERS_IMAGE:latest" -f orders/Dockerfile orders
+    - docker push "$ORDERS_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$ORDERS_IMAGE:latest"
+
+# -----------------------
+# Deploy (Windows shell runner - PowerShell, Docker Desktop cluster)
+# Requirements on runner machine:
+#   - kubectl in PATH
+#   - helm in PATH
+#   - kubeconfig already configured (Docker Desktop usually is)
+# -----------------------
+.deploy_ps_template: &deploy_ps_template
+  stage: deploy
+  tags: ["local-k8s"]
+  needs:
+    - job: build_gateway
+    - job: build_users
+    - job: build_orders
+  script:
+    # Fail fast if the secret is missing (Approach A: Helm manages secret)
+    - 'if (-not $env:JWT_SECRET_KEY) { throw "JWT_SECRET_KEY is empty. Configure JWT_SECRET_KEY_* in GitLab CI/CD Variables." }'
+
+    # Ensure namespace exists
+    - 'kubectl get ns $env:KUBE_NAMESPACE 2>$null; if ($LASTEXITCODE -ne 0) { kubectl create ns $env:KUBE_NAMESPACE }'
+
+    # Optional (recommended for dev): delete deployments to avoid immutable selector issues after chart label changes
+    - 'if ($env:KUBE_NAMESPACE -eq "dev") { kubectl -n $env:KUBE_NAMESPACE delete deploy gateway users orders --ignore-not-found }'
+
+    # Helm deploy:
+    # - sets JWT secret via values (chart should create/mount the Secret)
+    # - deploys images tagged with this commit SHA
+    - 'helm upgrade --install $env:RELEASE_NAME $env:CHART_PATH -n $env:KUBE_NAMESPACE -f $env:VALUES_FILE --wait --timeout 10m --set-string secrets.jwtSecretKey="$env:JWT_SECRET_KEY" --set gateway.image.tag=$env:CI_COMMIT_SHORT_SHA --set users.image.tag=$env:CI_COMMIT_SHORT_SHA --set orders.image.tag=$env:CI_COMMIT_SHORT_SHA'
+
+    # Helpful debug output before waiting on rollout
+    - 'kubectl -n $env:KUBE_NAMESPACE get pods -o wide'
+
+    - 'kubectl -n $env:KUBE_NAMESPACE rollout status deploy/gateway --timeout=180s'
+    - 'kubectl -n $env:KUBE_NAMESPACE rollout status deploy/users --timeout=180s'
+    - 'kubectl -n $env:KUBE_NAMESPACE rollout status deploy/orders --timeout=180s'
+
+deploy_dev:
+  <<: *deploy_ps_template
+  variables:
+    KUBE_NAMESPACE: "dev"
+    VALUES_FILE: "helm/values-dev.yaml"
+    JWT_SECRET_KEY: "$JWT_SECRET_KEY_DEV"
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+deploy_qa:
+  <<: *deploy_ps_template
+  variables:
+    KUBE_NAMESPACE: "qa"
+    VALUES_FILE: "helm/values-qa.yaml"
+    JWT_SECRET_KEY: "$JWT_SECRET_KEY_QA"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+deploy_staging:
+  <<: *deploy_ps_template
+  variables:
+    KUBE_NAMESPACE: "staging"
+    VALUES_FILE: "helm/values-staging.yaml"
+    JWT_SECRET_KEY: "$JWT_SECRET_KEY_STAGING"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+deploy_prod:
+  <<: *deploy_ps_template
+  variables:
+    KUBE_NAMESPACE: "prod"
+    VALUES_FILE: "helm/values-prod.yaml"
+    JWT_SECRET_KEY: "$JWT_SECRET_KEY_PROD"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
